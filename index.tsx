@@ -1269,7 +1269,7 @@ const FateEditor = ({
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLocalMascotUrl((e.target as any).value)}
                     onBlur={applyMascot} // Auto apply on blur
                     onKeyDown={(e) => e.key === 'Enter' && applyMascot()}
-                    placeholder="Paste Image URL (ex. https://xxx.jpg )..."
+                    placeholder="Paste Image Address (ex. https://xxx.jpg )"
                     style={{
                     flex: 1,
                     background: '#222',
