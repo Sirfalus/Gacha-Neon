@@ -78,13 +78,27 @@ interface GameConfig {
     barrierWidth: number;
     barrierHeight: number;
   };
+  graphics: {
+    bloomEnabled: boolean;
+    bloomThreshold: number;
+    bloomIntensity: number;
+    neonIntensity: number;
+    gridHeight: number;
+  };
 }
 
 const INITIAL_CONFIG: GameConfig = {
   globe: { centerY: 5.8, radius: 3 },
   spawn: { yMin: 4.5, yMax: 7.0, spawnRadius: 2.5 },
   mascot: { x: -1.8, y: 2, z: 3.5 },
-  tray: { barrierZ: 5, barrierWidth: 6, barrierHeight: 3 }
+  tray: { barrierZ: 5, barrierWidth: 6, barrierHeight: 3 },
+  graphics: {
+    bloomEnabled: true,
+    bloomThreshold: 0.9,
+    bloomIntensity: 0.8,
+    neonIntensity: 1.5,
+    gridHeight: 0.1
+  }
 };
 
 // --- Sound Manager ---
@@ -286,7 +300,7 @@ class TextureErrorBoundary extends React.Component<TextureErrorBoundaryProps, Te
 
 // --- 3D Components ---
 
-const Floor = () => {
+const Floor = ({ gridHeight }: { gridHeight: number }) => {
   const [ref] = usePlane(() => ({
     rotation: [-Math.PI / 2, 0, 0],
     position: [0, 0, 0], // Floor at y=0
@@ -296,21 +310,21 @@ const Floor = () => {
     <group>
       <mesh ref={ref}>
         <planeGeometry args={[100, 100]} />
-        {/* Dark reflective floor */}
-        <meshStandardMaterial color="#050505" roughness={0.1} metalness={0.8} />
+        {/* Dark reflective floor - Increased roughness to prevent shimmer */}
+        <meshStandardMaterial color="#050505" roughness={0.5} metalness={0.5} />
       </mesh>
       {/* Visual Neon Grid Overlay */}
       <Grid
-        renderOrder={-1}
-        position={[0, 0.02, 0]}
+        renderOrder={1}
+        position={[0, gridHeight, 0]}
         infiniteGrid
         cellSize={1}
-        cellThickness={0.6}
+        cellThickness={0.5}
         sectionSize={3}
         sectionThickness={1}
         sectionColor={THEME.neonPink}
         cellColor={THEME.neonBlue}
-        fadeDistance={40}
+        fadeDistance={30}
       />
     </group>
   );
@@ -378,7 +392,7 @@ const GlassGlobe: React.FC<{ config: GameConfig['globe'], debug: boolean }> = ({
 
       {/* Decorative Rings */}
       <Torus args={[radius + 0.2, 0.08, 16, 100]} rotation={[Math.PI / 2, 0, 0]}>
-        <meshStandardMaterial color={THEME.neonBlue} emissive={THEME.neonBlue} emissiveIntensity={2} />
+        <meshStandardMaterial color={THEME.neonBlue} emissive={THEME.neonBlue} emissiveIntensity={1.5} toneMapped={false} />
       </Torus>
 
       {/* Debug Visuals for Invisible Wall */}
@@ -392,7 +406,7 @@ const GlassGlobe: React.FC<{ config: GameConfig['globe'], debug: boolean }> = ({
   );
 };
 
-const MachineBase: React.FC<{ config: GameConfig['tray'], debug: boolean, gameState: string }> = ({ config, debug, gameState }) => {
+const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['graphics'], debug: boolean, gameState: string }> = ({ config, graphics, debug, gameState }) => {
   const { barrierZ, barrierWidth, barrierHeight } = config;
 
   // Propeller / Fan Animation Logic
@@ -453,8 +467,8 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], debug: boolean, gameSt
   // Futuristic Materials
   const cyberMetal = <meshStandardMaterial color="#1a1a2e" metalness={0.8} roughness={0.2} />;
   const cyberDark = <meshStandardMaterial color="#050510" metalness={0.5} roughness={0.5} />;
-  const neonBlueMat = <meshStandardMaterial color={THEME.neonBlue} emissive={THEME.neonBlue} emissiveIntensity={2} toneMapped={false} />;
-  const neonPinkMat = <meshStandardMaterial color={THEME.neonPink} emissive={THEME.neonPink} emissiveIntensity={2} toneMapped={false} />;
+  const neonBlueMat = <meshStandardMaterial color={THEME.neonBlue} emissive={THEME.neonBlue} emissiveIntensity={graphics.neonIntensity} toneMapped={false} />;
+  const neonPinkMat = <meshStandardMaterial color={THEME.neonPink} emissive={THEME.neonPink} emissiveIntensity={graphics.neonIntensity} toneMapped={false} />;
   const debugMat = <meshBasicMaterial color="red" wireframe transparent opacity={0.5} />;
 
   return (
@@ -734,8 +748,11 @@ const Mascot = ({ url, gameState, pos }: { url: string, gameState: string, pos: 
         <meshBasicMaterial
           map={texture}
           transparent
+          alphaTest={0.5}
+          depthWrite={false}
           side={THREE.DoubleSide}
           toneMapped={false}
+          color="#fff" // Ensure full brightness
         />
       </mesh>
     </group>
@@ -866,8 +883,8 @@ const GameScene = ({
         ensuring physics bodies update.
         Passed gameState to animate the propeller.
       */}
-      <MachineBase key={JSON.stringify(config.tray)} config={config.tray} debug={debug} gameState={gameState} />
-      <Floor />
+      <MachineBase key={JSON.stringify(config.tray)} config={config.tray} graphics={config.graphics} debug={debug} gameState={gameState} />
+      <Floor gridHeight={config.graphics.gridHeight} />
 
       {balls.map(b => (
         <Ball
@@ -927,7 +944,7 @@ const DevTools = ({
 }) => {
   if (!visible) return null;
 
-  const handleChange = (section: keyof GameConfig, key: string, val: number) => {
+  const handleChange = (section: keyof GameConfig, key: string, val: any) => {
     setConfig(prev => ({
       ...prev,
       [section]: {
@@ -1028,6 +1045,30 @@ const DevTools = ({
         <div style={styleRow}>
           <span>Z</span>
           <input type="number" step="0.5" value={config.mascot.z} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('mascot', 'z', parseFloat((e.target as any).value))} style={styleInput} />
+        </div>
+      </div>
+
+      <div>
+        <strong style={{ display: 'block', color: '#fff', fontSize: '12px', marginBottom: '5px' }}>GRAPHICS</strong>
+        <div style={styleRow}>
+          <span>Bloom Open</span>
+          <input type="checkbox" checked={config.graphics.bloomEnabled} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('graphics', 'bloomEnabled', (e.target as any).checked ? 1 : 0)} style={{ cursor: 'pointer' }} />
+        </div>
+        <div style={styleRow}>
+          <span>Threshold</span>
+          <input type="number" step="0.05" value={config.graphics.bloomThreshold} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('graphics', 'bloomThreshold', parseFloat((e.target as any).value))} style={styleInput} />
+        </div>
+        <div style={styleRow}>
+          <span>Intensity</span>
+          <input type="number" step="0.1" value={config.graphics.bloomIntensity} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('graphics', 'bloomIntensity', parseFloat((e.target as any).value))} style={styleInput} />
+        </div>
+        <div style={styleRow}>
+          <span>Neon Power</span>
+          <input type="number" step="0.1" value={config.graphics.neonIntensity} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('graphics', 'neonIntensity', parseFloat((e.target as any).value))} style={styleInput} />
+        </div>
+        <div style={styleRow}>
+          <span>Grid Height</span>
+          <input type="number" step="0.01" value={config.graphics.gridHeight} onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('graphics', 'gridHeight', parseFloat((e.target as any).value))} style={styleInput} />
         </div>
       </div>
     </div>
@@ -1800,7 +1841,7 @@ const App = () => {
         />
       </div>
 
-      <Canvas shadows camera={{ position: [0, 6, 14], fov: 45 }} dpr={[1, 2]}>
+      <Canvas camera={{ position: [0, 6, 14], fov: 45 }} dpr={1}>
         <color attach="background" args={['#050505']} />
         <fog attach="fog" args={['#050505', 10, 50]} />
 
@@ -1823,8 +1864,9 @@ const App = () => {
         </Physics>
 
         <EffectComposer enableNormalPass={false}>
-          <Bloom luminanceThreshold={1} intensity={1.5} levels={9} mipmapBlur />
-          <Noise opacity={0.05} />
+          {gameConfig.graphics.bloomEnabled && (
+            <Bloom luminanceThreshold={gameConfig.graphics.bloomThreshold} intensity={gameConfig.graphics.bloomIntensity} levels={9} mipmapBlur />
+          )}
           <Vignette eskil={false} offset={0.1} darkness={1.1} />
         </EffectComposer>
 
@@ -1837,7 +1879,7 @@ const App = () => {
           target={[0, 3, 0]}
         />
         <Environment preset="city" />
-        <ContactShadows resolution={1024} scale={50} blur={2} opacity={0.5} far={10} color="#000000" position={[0, 0.001, 0]} />
+        {/* ContactShadows removed for mobile stability */}
       </Canvas>
     </>
   );
@@ -1857,7 +1899,8 @@ const getActionButtonStyle = (color: string, isMobile: boolean) => ({
   boxShadow: `0 0 30px ${color}`,
   transition: 'all 0.3s ease',
   textTransform: 'uppercase' as const,
-  letterSpacing: '2px'
+  letterSpacing: '2px',
+  transform: 'translateZ(0)'
 });
 
 const root = createRoot((window as any).document.getElementById('root')!);
