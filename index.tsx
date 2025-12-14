@@ -27,6 +27,7 @@ const THEME = {
   neonGold: '#ffd700',
   neonGreen: '#00ffaa',
   neonPurple: '#aa00ff',
+  neonOrange: '#ffaa00',
   darkMetal: '#1a1a1a',
   glass: '#ffffff'
 };
@@ -239,6 +240,16 @@ const convertDriveLink = (url: string) => {
 
   return url;
 };
+
+// Shuffle helper for Gift Mode (Fisher-Yates)
+function shuffleArray(array: string[]) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
 
 // --- Error Boundary for Textures ---
 interface TextureErrorBoundaryProps {
@@ -745,7 +756,8 @@ const GameScene = ({
   resetTrigger,
   debug,
   ballCount,
-  onPieceSelected
+  onPieceSelected,
+  fixedResult
 }: { 
   spinSignal: number, 
   gameState: string, 
@@ -757,7 +769,8 @@ const GameScene = ({
   resetTrigger: number,
   debug: boolean,
   ballCount: number,
-  onPieceSelected?: (color: string) => void
+  onPieceSelected?: (color: string) => void,
+  fixedResult?: string | null
 }) => {
   const [balls, setBalls] = useState<{id: string, pos: [number, number, number], color: string}[]>([]);
   const [prizeVisible, setPrizeVisible] = useState(false);
@@ -874,8 +887,8 @@ const GameScene = ({
           isPrize={true}
           onClick={() => {
             soundManager.playFanfare();
-            // Pick a random fate from the list provided
-            const f = fateList.length > 0 ? fateList[Math.floor(Math.random()*fateList.length)] : "NO TARGETS";
+            // Pick result: If fixedResult provided (GIFT mode), use it. Else random from list.
+            const f = fixedResult || (fateList.length > 0 ? fateList[Math.floor(Math.random()*fateList.length)] : "NO TARGETS");
             onPrizeClaim(f);
             setPrizeVisible(false);
           }}
@@ -1046,11 +1059,12 @@ const FateEditor = ({
   setMascotUrl: (url: string) => void,
   devMode: boolean,
   setDevMode: (b: boolean) => void,
-  mode: 'FATE' | 'SQUAD'
+  mode: 'FATE' | 'SQUAD' | 'GIFT'
 }) => {
   const [newFate, setNewFate] = useState('');
   const [localMascotUrl, setLocalMascotUrl] = useState(mascotUrl);
-  const [activeTab, setActiveTab] = useState<'FATE' | 'SQUAD'>(mode);
+  // Default to squad edit if in Gift mode
+  const [activeTab, setActiveTab] = useState<'FATE' | 'SQUAD'>(mode === 'GIFT' ? 'SQUAD' : mode);
   const [squadText, setSquadText] = useState(squadList.join('\n'));
 
   // Sync local state if parent state changes (reset)
@@ -1062,7 +1076,7 @@ const FateEditor = ({
   useEffect(() => {
     if(isOpen) {
         setSquadText(squadList.join('\n'));
-        setActiveTab(mode);
+        setActiveTab(mode === 'GIFT' ? 'SQUAD' : mode);
     }
   }, [isOpen, squadList, mode]);
 
@@ -1160,7 +1174,7 @@ const FateEditor = ({
                  fontSize: '1.1rem'
                }}
              >
-               SQUAD LIST
+               SQUAD / GIFT LIST
              </button>
         </div>
 
@@ -1239,7 +1253,7 @@ const FateEditor = ({
                         }}
                     />
                     <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '10px', fontStyle: 'italic' }}>
-                        * This is the master list. Reload Squad in main screen to reset active players to this list.
+                        * This is the master list for Squad and Gift modes.
                     </div>
                 </>
             )}
@@ -1300,7 +1314,7 @@ const FateEditor = ({
 
 const App = () => {
   const [gameState, setGameState] = useState<'IDLE' | 'SPINNING' | 'RESULT'>('IDLE');
-  const [mode, setMode] = useState<'FATE' | 'SQUAD'>('FATE');
+  const [mode, setMode] = useState<'FATE' | 'SQUAD' | 'GIFT'>('FATE');
   
   const [fate, setFate] = useState<string | null>(null);
   const [spinCount, setSpinCount] = useState(0);
@@ -1310,6 +1324,10 @@ const App = () => {
   const [fates, setFates] = useState<string[]>(DEFAULT_FATES);
   const [squadList, setSquadList] = useState<string[]>(DEFAULT_SQUAD);
   const [activeSquad, setActiveSquad] = useState<string[]>(DEFAULT_SQUAD);
+
+  // Gift Mode State
+  const [exchangeOrder, setExchangeOrder] = useState<string[]>([]);
+  const [exchangeIndex, setExchangeIndex] = useState(0);
 
   const [prizeColor, setPrizeColor] = useState(THEME.neonGold);
   const [mascotUrl, setMascotUrl] = useState('https://iili.io/fYojht2.md.png');
@@ -1347,14 +1365,23 @@ const App = () => {
 
   // Handle Mode Switch
   const toggleMode = () => {
-      const newMode = mode === 'FATE' ? 'SQUAD' : 'FATE';
+      let newMode: 'FATE' | 'SQUAD' | 'GIFT' = 'FATE';
+      if (mode === 'FATE') newMode = 'SQUAD';
+      else if (mode === 'SQUAD') newMode = 'GIFT';
+      else newMode = 'FATE';
+      
       setMode(newMode);
+      
+      // Reset logic for specific modes
       if (newMode === 'SQUAD') {
-          // Reset squad on entry? Let's just ensure it's valid.
           if (activeSquad.length === 0) {
               setActiveSquad([...squadList]);
           }
+      } else if (newMode === 'GIFT') {
+          setExchangeOrder([]);
+          setExchangeIndex(0);
       }
+
       soundManager.playClick();
   };
 
@@ -1362,6 +1389,26 @@ const App = () => {
       setActiveSquad([...squadList]);
       soundManager.playClick();
       setResetTrigger(prev => prev + 1); // Respawn balls
+  };
+
+  const handleStartGift = () => {
+      if (squadList.length < 2) {
+          (window as any).alert("Add at least 2 people to the Squad List for an exchange!");
+          return;
+      }
+      const shuffled = shuffleArray(squadList);
+      setExchangeOrder(shuffled);
+      setExchangeIndex(0);
+      setGameState('IDLE');
+      soundManager.playClick();
+      setResetTrigger(prev => prev + 1);
+  };
+
+  const handleResetGift = () => {
+      setExchangeOrder([]);
+      setExchangeIndex(0);
+      setGameState('IDLE');
+      soundManager.playClick();
   };
 
   // Update volume expanded state based on mobile
@@ -1403,9 +1450,6 @@ const App = () => {
     soundManager.init();
     soundManager.playSpin();
     
-    // We do NOT set random prize color here anymore. 
-    // It is set via callback from GameScene to sync with removed ball.
-
     setGameState('SPINNING');
     setFate(null);
     setSpinCount(s => s + 1);
@@ -1426,6 +1470,9 @@ const App = () => {
     if (mode === 'SQUAD') {
         // Remove the picked person from the active squad
         setActiveSquad(prev => prev.filter(p => p !== text));
+    } else if (mode === 'GIFT') {
+        // Advance to next person in chain
+        setExchangeIndex(prev => prev + 1);
     }
   };
 
@@ -1443,14 +1490,42 @@ const App = () => {
 
   // Determine current ball count for GameScene
   const currentBallCount = useMemo(() => {
-    const base = mode === 'FATE' ? 35 : activeSquad.length;
-    // Visually decrease count when prize appears in tray (RESULT state) for BOTH modes
-    // This makes the ball disappear from inside the glass
-    if (gameState === 'RESULT' && base > 0) {
-        return base - 1;
+    if (mode === 'FATE') return 35;
+    if (mode === 'SQUAD') {
+        const base = activeSquad.length;
+        if (gameState === 'RESULT' && base > 0) return base - 1;
+        return base;
     }
-    return base;
-  }, [mode, activeSquad.length, gameState]);
+    if (mode === 'GIFT') {
+        if (exchangeOrder.length === 0) return squadList.length; // Balls represent potential players
+        const remaining = exchangeOrder.length - exchangeIndex;
+        // Decrease balls as gifts are claimed to show progress
+        if (gameState === 'RESULT' && remaining > 0) return remaining - 1;
+        return remaining;
+    }
+    return 20;
+  }, [mode, activeSquad.length, gameState, exchangeOrder.length, exchangeIndex, squadList.length]);
+
+  // Determine fixed result for GIFT mode
+  const fixedResult = useMemo(() => {
+      if (mode === 'GIFT' && exchangeOrder.length > 0) {
+          // The current giver is index i.
+          // They give to i+1.
+          const nextIdx = (exchangeIndex + 1) % exchangeOrder.length;
+          return exchangeOrder[nextIdx];
+      }
+      return null;
+  }, [mode, exchangeOrder, exchangeIndex]);
+
+  // Determine Current Giver Name
+  const currentGiver = useMemo(() => {
+      if (mode === 'GIFT' && exchangeOrder.length > 0 && exchangeIndex < exchangeOrder.length) {
+          return exchangeOrder[exchangeIndex];
+      }
+      return null;
+  }, [mode, exchangeOrder, exchangeIndex]);
+
+  const modeColor = mode === 'FATE' ? THEME.neonBlue : (mode === 'SQUAD' ? THEME.neonGreen : THEME.neonOrange);
 
   return (
     <>
@@ -1462,16 +1537,29 @@ const App = () => {
             margin: 0, 
             fontSize: '4rem', 
             fontFamily: "'Zen Tokyo Zoo', cursive", 
-            color: mode === 'FATE' ? THEME.neonPink : THEME.neonGreen,
-            textShadow: `0 0 20px ${mode === 'FATE' ? THEME.neonPink : THEME.neonGreen}`,
+            color: modeColor,
+            textShadow: `0 0 20px ${modeColor}`,
             transition: 'color 0.5s ease, text-shadow 0.5s ease'
           }}>
             NEON GACHA
           </h1>
           <p style={{ margin: 0, fontSize: '1.2rem', letterSpacing: '4px', opacity: 0.8 }}>
-              {mode === 'FATE' ? 'CYBER FATE SYSTEM' : 'TARGET SELECTOR'}
+              {mode === 'FATE' ? 'CYBER FATE SYSTEM' : (mode === 'SQUAD' ? 'TARGET SELECTOR' : 'GIFT EXCHANGE PROTOCOL')}
           </p>
         </div>
+        
+        {/* Current Turner for Gift Mode */}
+        {mode === 'GIFT' && exchangeOrder.length > 0 && exchangeIndex < exchangeOrder.length && (
+            <div style={{ 
+                position: 'absolute', top: 140, left: 30, 
+                background: 'rgba(0,0,0,0.6)', padding: '10px 20px', 
+                borderLeft: `4px solid ${THEME.neonOrange}`,
+                backdropFilter: 'blur(4px)'
+            }}>
+                <div style={{ fontSize: '0.8rem', color: '#aaa' }}>CURRENT ROLLER</div>
+                <div style={{ fontSize: '2rem', color: '#fff', fontWeight: 'bold' }}>{currentGiver}</div>
+            </div>
+        )}
 
         {/* Controls: Mode, Audio & Settings */}
         <div style={{ 
@@ -1491,19 +1579,25 @@ const App = () => {
              onClick={toggleMode}
              style={{
                  background: 'rgba(0,0,0,0.5)',
-                 border: `1px solid ${mode === 'FATE' ? THEME.neonBlue : THEME.neonGreen}`,
-                 color: mode === 'FATE' ? THEME.neonBlue : THEME.neonGreen,
+                 border: `1px solid ${modeColor}`,
+                 color: modeColor,
                  padding: '10px 15px',
                  fontSize: '1rem',
                  fontFamily: "'Rajdhani', sans-serif",
                  fontWeight: 'bold',
                  cursor: 'pointer',
                  borderRadius: '4px',
-                 display: 'flex', alignItems: 'center', gap: '8px'
+                 display: 'flex', alignItems: 'center', gap: '8px',
+                 minWidth: '160px',
+                 justifyContent: 'center'
              }}
           >
-             <span style={{ fontSize: '1.2rem' }}>{mode === 'FATE' ? '🔮' : '👥'}</span>
-             <span>{mode === 'FATE' ? 'FATE MODE' : 'SQUAD MODE'}</span>
+             <span style={{ fontSize: '1.2rem' }}>
+                {mode === 'FATE' ? '🔮' : (mode === 'SQUAD' ? '👥' : '🎁')}
+             </span>
+             <span>
+                {mode === 'FATE' ? 'FATE MODE' : (mode === 'SQUAD' ? 'SQUAD MODE' : 'GIFT MODE')}
+             </span>
           </button>
 
           <button
@@ -1580,52 +1674,71 @@ const App = () => {
 
         {/* Action Button */}
         <div style={{ position: 'absolute', bottom: isMobile ? 30 : 50, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'auto' }}>
-          {mode === 'SQUAD' && activeSquad.length === 0 ? (
-             <button
-                onClick={handleReloadSquad}
-                onMouseEnter={() => soundManager.init()}
-                style={{
-                  background: '#333',
-                  border: `2px solid ${THEME.neonGreen}`,
-                  color: THEME.neonGreen,
-                  padding: isMobile ? '10px 30px' : '20px 60px',
-                  fontSize: isMobile ? '1.2rem' : '2rem',
-                  fontFamily: "'Rajdhani', sans-serif",
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  borderRadius: '4px',
-                  boxShadow: `0 0 30px ${THEME.neonGreen}`,
-                  transition: 'all 0.3s ease',
-                  textTransform: 'uppercase',
-                  letterSpacing: '2px'
-                }}
-             >
-                RELOAD SQUAD
-             </button>
-          ) : (
-             <button
-                onClick={handleSpin}
-                disabled={gameState !== 'IDLE'}
-                onMouseEnter={() => soundManager.init()} // Hint to browser
-                style={{
-                  background: gameState === 'IDLE' ? 'transparent' : '#333',
-                  border: `2px solid ${gameState === 'IDLE' ? THEME.neonBlue : '#555'}`,
-                  color: gameState === 'IDLE' ? THEME.neonBlue : '#555',
-                  padding: isMobile ? '10px 30px' : '20px 60px',
-                  fontSize: isMobile ? '1.2rem' : '2rem',
-                  fontFamily: "'Rajdhani', sans-serif",
-                  fontWeight: 'bold',
-                  cursor: gameState === 'IDLE' ? 'pointer' : 'default',
-                  borderRadius: '4px',
-                  boxShadow: gameState === 'IDLE' ? `0 0 30px ${THEME.neonBlue}, inset 0 0 10px ${THEME.neonBlue}` : 'none',
-                  transition: 'all 0.3s ease',
-                  textTransform: 'uppercase',
-                  letterSpacing: '2px'
-                }}
-              >
-                {gameState === 'SPINNING' ? 'PROCESSING...' : gameState === 'RESULT' ? 'CLAIM PRIZE' : 'INITIATE'}
-              </button>
-          )}
+          
+          {/* Logic for Button Display based on Mode and State */}
+          {(() => {
+              if (mode === 'SQUAD' && activeSquad.length === 0) {
+                  return (
+                    <button
+                        onClick={handleReloadSquad}
+                        onMouseEnter={() => soundManager.init()}
+                        style={getActionButtonStyle(THEME.neonGreen, isMobile)}
+                    >
+                        RELOAD SQUAD
+                    </button>
+                  );
+              }
+
+              if (mode === 'GIFT') {
+                  if (exchangeOrder.length === 0) {
+                      return (
+                        <button
+                            onClick={handleStartGift}
+                            onMouseEnter={() => soundManager.init()}
+                            style={getActionButtonStyle(THEME.neonOrange, isMobile)}
+                        >
+                            START EXCHANGE
+                        </button>
+                      );
+                  }
+                  if (exchangeIndex >= exchangeOrder.length) {
+                      return (
+                        <button
+                            onClick={handleResetGift}
+                            onMouseEnter={() => soundManager.init()}
+                            style={getActionButtonStyle(THEME.neonOrange, isMobile)}
+                        >
+                            RESET EXCHANGE
+                        </button>
+                      );
+                  }
+              }
+
+              return (
+                <button
+                    onClick={handleSpin}
+                    disabled={gameState !== 'IDLE'}
+                    onMouseEnter={() => soundManager.init()}
+                    style={{
+                        background: gameState === 'IDLE' ? 'transparent' : '#333',
+                        border: `2px solid ${gameState === 'IDLE' ? modeColor : '#555'}`,
+                        color: gameState === 'IDLE' ? modeColor : '#555',
+                        padding: isMobile ? '10px 30px' : '20px 60px',
+                        fontSize: isMobile ? '1.2rem' : '2rem',
+                        fontFamily: "'Rajdhani', sans-serif",
+                        fontWeight: 'bold',
+                        cursor: gameState === 'IDLE' ? 'pointer' : 'default',
+                        borderRadius: '4px',
+                        boxShadow: gameState === 'IDLE' ? `0 0 30px ${modeColor}, inset 0 0 10px ${modeColor}` : 'none',
+                        transition: 'all 0.3s ease',
+                        textTransform: 'uppercase',
+                        letterSpacing: '2px'
+                    }}
+                >
+                    {gameState === 'SPINNING' ? 'PROCESSING...' : gameState === 'RESULT' ? 'CLAIM PRIZE' : (mode === 'GIFT' ? `SPIN (${currentGiver})` : 'INITIATE')}
+                </button>
+              );
+          })()}
         </div>
 
         {/* Modal Overlay for Result */}
@@ -1638,10 +1751,12 @@ const App = () => {
             pointerEvents: 'auto'
           }} onClick={() => { setFate(null); soundManager.playClick(); }}>
             <div style={{ textAlign: 'center', transform: 'scale(1)', animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}>
-              <div style={{ fontSize: '1.5rem', color: THEME.neonBlue, marginBottom: '20px' }}>SYSTEM MESSAGE RECEIVED</div>
+              <div style={{ fontSize: '1.5rem', color: modeColor, marginBottom: '20px' }}>
+                  {mode === 'GIFT' ? 'GIFT SENDER' : 'SYSTEM MESSAGE RECEIVED'}
+              </div>
               <h2 style={{ 
                 fontSize: '5rem', margin: 0, color: 'white', 
-                textShadow: `0 0 40px ${THEME.neonPink}`,
+                textShadow: `0 0 40px ${modeColor}`,
                 fontFamily: "'Zen Tokyo Zoo', cursive"
               }}>
                 {fate}
@@ -1649,6 +1764,11 @@ const App = () => {
               {mode === 'SQUAD' && (
                   <div style={{ color: THEME.neonGreen, fontSize: '1.2rem', marginTop: '10px' }}>
                       REMOVED FROM ROSTER
+                  </div>
+              )}
+              {mode === 'GIFT' && (
+                  <div style={{ color: THEME.neonOrange, fontSize: '1.5rem', marginTop: '10px', background: 'rgba(0,0,0,0.5)', padding: '5px 15px', borderRadius: '4px' }}>
+                      SENDING GIFT TO: <span style={{color: '#fff', fontWeight: 'bold'}}>{exchangeOrder[exchangeIndex - 1]}</span>
                   </div>
               )}
               <p style={{ marginTop: '30px', color: '#aaa', cursor: 'pointer' }}>[ CLICK TO DISMISS ]</p>
@@ -1698,6 +1818,7 @@ const App = () => {
               debug={devMode}
               ballCount={currentBallCount}
               onPieceSelected={handlePieceSelected}
+              fixedResult={fixedResult}
            />
         </Physics>
 
@@ -1721,6 +1842,23 @@ const App = () => {
     </>
   );
 };
+
+// Helper for button styles
+const getActionButtonStyle = (color: string, isMobile: boolean) => ({
+    background: '#333',
+    border: `2px solid ${color}`,
+    color: color,
+    padding: isMobile ? '10px 30px' : '20px 60px',
+    fontSize: isMobile ? '1.2rem' : '2rem',
+    fontFamily: "'Rajdhani', sans-serif",
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    borderRadius: '4px',
+    boxShadow: `0 0 30px ${color}`,
+    transition: 'all 0.3s ease',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '2px'
+});
 
 const root = createRoot((window as any).document.getElementById('root')!);
 root.render(<App />);
