@@ -1083,7 +1083,8 @@ const FateEditor = ({
   setMascotUrl,
   devMode,
   setDevMode,
-  mode
+  mode,
+  isMobile
 }: {
   isOpen: boolean,
   onClose: () => void,
@@ -1095,13 +1096,17 @@ const FateEditor = ({
   setMascotUrl: (url: string) => void,
   devMode: boolean,
   setDevMode: (b: boolean) => void,
-  mode: 'FATE' | 'SQUAD' | 'GIFT'
+  mode: 'FATE' | 'SQUAD' | 'GIFT',
+  isMobile: boolean
 }) => {
   const [newFate, setNewFate] = useState('');
   const [localMascotUrl, setLocalMascotUrl] = useState(mascotUrl);
   // Default to squad edit if in Gift mode
   const [activeTab, setActiveTab] = useState<'FATE' | 'SQUAD'>(mode === 'GIFT' ? 'SQUAD' : mode);
   const [squadText, setSquadText] = useState(squadList.join('\n'));
+  const [showFullFateList, setShowFullFateList] = useState(false);
+  const [selectedFates, setSelectedFates] = useState<number[]>([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   // Sync local state if parent state changes (reset)
   useEffect(() => {
@@ -1114,7 +1119,8 @@ const FateEditor = ({
       setSquadText(squadList.join('\n'));
       setActiveTab(mode === 'GIFT' ? 'SQUAD' : mode);
     }
-  }, [isOpen, squadList, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const handleSquadTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = (e.target as any).value;
@@ -1134,10 +1140,41 @@ const FateEditor = ({
   };
 
   const handleDeleteFate = (index: number) => {
-    const next = [...fates];
-    next.splice(index, 1);
-    setFates(next);
-    soundManager.playClick();
+    if ((window as any).confirm(`Delete "${fates[index]}"?`)) {
+      const next = [...fates];
+      next.splice(index, 1);
+      setFates(next);
+      soundManager.playClick();
+    }
+  };
+
+  const handleToggleSelection = (index: number) => {
+    setSelectedFates(prev =>
+      prev.includes(index)
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    );
+  };
+
+  const handleSelectAll = () => {
+    setSelectedFates(fates.map((_, idx) => idx));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedFates([]);
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedFates.length === 0) return;
+
+    const count = selectedFates.length;
+    if ((window as any).confirm(`Delete ${count} selected fate${count !== 1 ? 's' : ''}?`)) {
+      const newFates = fates.filter((_, idx) => !selectedFates.includes(idx));
+      setFates(newFates);
+      setSelectedFates([]);
+      setIsSelectionMode(false);
+      soundManager.playClick();
+    }
   };
 
   const applyMascot = () => {
@@ -1218,7 +1255,7 @@ const FateEditor = ({
           {activeTab === 'FATE' ? (
             <>
               <h3 style={{ color: '#aaa', margin: '0 0 10px 0', fontSize: '1rem' }}>RANDOM FATES</h3>
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', marginBottom: '20px' }}>
                 <input
                   type="text"
                   value={newFate}
@@ -1232,7 +1269,8 @@ const FateEditor = ({
                     color: 'white',
                     padding: '10px',
                     fontFamily: "'Rajdhani', sans-serif",
-                    fontSize: '16px'
+                    fontSize: '16px',
+                    width: isMobile ? '100%' : 'auto'
                   }}
                 />
                 <button
@@ -1243,31 +1281,91 @@ const FateEditor = ({
                     border: 'none',
                     padding: '10px 20px',
                     fontWeight: 'bold',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    width: isMobile ? '100%' : 'auto'
                   }}
                 >ADD</button>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid #333', marginBottom: '20px' }}>
-                {fates.map((item, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex', justifyContent: 'space-between', padding: '10px', borderBottom: '1px solid #222', alignItems: 'center'
+              {/* Mobile: Show preview + "View All" button */}
+              {isMobile ? (
+                <>
+                  <div style={{
+                    borderTop: '1px solid #333',
+                    paddingTop: '15px',
+                    marginBottom: '20px'
                   }}>
-                    <span>{item}</span>
-                    <button
-                      onClick={() => handleDeleteFate(idx)}
-                      style={{
-                        background: 'transparent',
-                        color: THEME.neonPink,
-                        border: `1px solid ${THEME.neonPink}`,
-                        padding: '5px 10px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                    >DELETE</button>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '10px'
+                    }}>
+                      <span style={{ color: '#aaa', fontSize: '0.9rem' }}>
+                        {fates.length} fate{fates.length !== 1 ? 's' : ''} in list
+                      </span>
+                      <button
+                        onClick={() => setShowFullFateList(true)}
+                        style={{
+                          background: 'transparent',
+                          border: `1px solid ${THEME.neonBlue}`,
+                          color: THEME.neonBlue,
+                          padding: '8px 15px',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          fontFamily: "'Rajdhani', sans-serif",
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        EDIT/VIEW ALL
+                      </button>
+                    </div>
+                    {/* Preview first 3 items */}
+                    {fates.slice(0, 3).map((item, idx) => (
+                      <div key={idx} style={{
+                        padding: '8px 0',
+                        borderBottom: '1px solid #222',
+                        color: '#ccc',
+                        fontSize: '0.9rem'
+                      }}>
+                        {item}
+                      </div>
+                    ))}
+                    {fates.length > 3 && (
+                      <div style={{
+                        padding: '8px 0',
+                        color: '#666',
+                        fontSize: '0.85rem',
+                        fontStyle: 'italic'
+                      }}>
+                        + {fates.length - 3} more...
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : (
+                /* Desktop: Show full scrollable list */
+                <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid #333', marginBottom: '20px' }}>
+                  {fates.map((item, idx) => (
+                    <div key={idx} style={{
+                      display: 'flex', justifyContent: 'space-between', padding: '10px', borderBottom: '1px solid #222', alignItems: 'center'
+                    }}>
+                      <span>{item}</span>
+                      <button
+                        onClick={() => handleDeleteFate(idx)}
+                        style={{
+                          background: 'transparent',
+                          color: THEME.neonPink,
+                          border: `1px solid ${THEME.neonPink}`,
+                          padding: '5px 10px',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >DELETE</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -1298,7 +1396,7 @@ const FateEditor = ({
         {/* Common Configs */}
         <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #333' }}>
           <h3 style={{ color: '#aaa', margin: '0 0 10px 0', fontSize: '1rem' }}>MASCOT IMAGE</h3>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
             <input
               type="text"
               value={localMascotUrl}
@@ -1313,7 +1411,8 @@ const FateEditor = ({
                 color: 'white',
                 padding: '10px',
                 fontFamily: "'Rajdhani', sans-serif",
-                fontSize: '14px'
+                fontSize: '14px',
+                width: isMobile ? '100%' : 'auto'
               }}
             />
             <button
@@ -1325,7 +1424,9 @@ const FateEditor = ({
                 padding: '0 15px',
                 fontWeight: 'bold',
                 cursor: 'pointer',
-                fontSize: '12px'
+                fontSize: '12px',
+                height: isMobile ? '40px' : 'auto',
+                width: isMobile ? '100%' : 'auto'
               }}
             >APPLY</button>
           </div>
@@ -1344,6 +1445,265 @@ const FateEditor = ({
           </label>
         </div>
       </div>
+
+      {/* Full-Screen Fate List Modal (Mobile Only) */}
+      {showFullFateList && isMobile && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          background: 'rgba(0,0,0,0.95)',
+          zIndex: 200,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '20px',
+          backdropFilter: 'blur(10px)'
+        }}>
+          {/* Header */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '15px',
+            paddingBottom: '15px',
+            borderBottom: `2px solid ${THEME.neonBlue}`
+          }}>
+            <h2 style={{
+              margin: 0,
+              color: THEME.neonBlue,
+              fontFamily: "'Rajdhani', sans-serif",
+              fontSize: '1.5rem'
+            }}>
+              ALL FATES ({fates.length})
+            </h2>
+            <button
+              onClick={() => {
+                setShowFullFateList(false);
+                setIsSelectionMode(false);
+                setSelectedFates([]);
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                fontSize: '28px',
+                cursor: 'pointer',
+                padding: '0',
+                lineHeight: 1
+              }}
+            >✕</button>
+          </div>
+
+          {/* Selection Controls */}
+          {fates.length > 0 && (
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              marginBottom: '15px',
+              flexWrap: 'wrap'
+            }}>
+              <button
+                onClick={() => {
+                  setIsSelectionMode(!isSelectionMode);
+                  setSelectedFates([]);
+                }}
+                style={{
+                  background: isSelectionMode ? THEME.neonBlue : 'transparent',
+                  border: `1px solid ${THEME.neonBlue}`,
+                  color: isSelectionMode ? '#000' : THEME.neonBlue,
+                  padding: '8px 15px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontFamily: "'Rajdhani', sans-serif",
+                  fontWeight: 'bold',
+                  flex: 1
+                }}
+              >
+                {isSelectionMode ? 'CANCEL SELECT' : 'SELECT MULTIPLE'}
+              </button>
+
+              {isSelectionMode && (
+                <>
+                  <button
+                    onClick={handleSelectAll}
+                    style={{
+                      background: 'transparent',
+                      border: `1px solid ${THEME.neonGreen}`,
+                      color: THEME.neonGreen,
+                      padding: '8px 15px',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontFamily: "'Rajdhani', sans-serif",
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ALL
+                  </button>
+                  <button
+                    onClick={handleDeselectAll}
+                    style={{
+                      background: 'transparent',
+                      border: `1px solid #666`,
+                      color: '#666',
+                      padding: '8px 15px',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontFamily: "'Rajdhani', sans-serif",
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    NONE
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Selected Count */}
+          {isSelectionMode && selectedFates.length > 0 && (
+            <div style={{
+              padding: '10px',
+              background: 'rgba(0,243,255,0.1)',
+              border: `1px solid ${THEME.neonBlue}`,
+              borderRadius: '4px',
+              marginBottom: '15px',
+              textAlign: 'center',
+              color: THEME.neonBlue,
+              fontSize: '0.9rem'
+            }}>
+              {selectedFates.length} item{selectedFates.length !== 1 ? 's' : ''} selected
+            </div>
+          )}
+
+          {/* Scrollable List */}
+          <div style={{
+            flex: 1,
+            overflowY: 'auto',
+            marginBottom: '15px'
+          }}>
+            {fates.length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                color: '#666',
+                padding: '40px 20px',
+                fontSize: '1rem'
+              }}>
+                No fates added yet. Use the form above to add some!
+              </div>
+            ) : (
+              fates.map((item, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => isSelectionMode && handleToggleSelection(idx)}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '15px 10px',
+                    borderBottom: '1px solid #333',
+                    gap: '10px',
+                    background: selectedFates.includes(idx) ? 'rgba(0,243,255,0.1)' : 'transparent',
+                    cursor: isSelectionMode ? 'pointer' : 'default',
+                    transition: 'background 0.2s'
+                  }}
+                >
+                  {isSelectionMode && (
+                    <input
+                      type="checkbox"
+                      checked={selectedFates.includes(idx)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleToggleSelection(idx);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        width: '20px',
+                        height: '20px',
+                        cursor: 'pointer',
+                        accentColor: THEME.neonBlue
+                      }}
+                    />
+                  )}
+                  <span style={{
+                    flex: 1,
+                    color: '#fff',
+                    fontSize: '1rem',
+                    wordBreak: 'break-word'
+                  }}>
+                    {item}
+                  </span>
+                  {!isSelectionMode && (
+                    <button
+                      onClick={() => {
+                        handleDeleteFate(idx);
+                        soundManager.playClick();
+                      }}
+                      style={{
+                        background: 'transparent',
+                        color: THEME.neonPink,
+                        border: `1px solid ${THEME.neonPink}`,
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontFamily: "'Rajdhani', sans-serif",
+                        fontWeight: 'bold',
+                        flexShrink: 0
+                      }}
+                    >
+                      DELETE
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Bottom Actions */}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {isSelectionMode && selectedFates.length > 0 ? (
+              <button
+                onClick={handleDeleteSelected}
+                style={{
+                  background: THEME.neonPink,
+                  color: '#000',
+                  border: 'none',
+                  padding: '15px',
+                  fontSize: '1.1rem',
+                  fontFamily: "'Rajdhani', sans-serif",
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                DELETE SELECTED ({selectedFates.length})
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setShowFullFateList(false);
+                  setIsSelectionMode(false);
+                  setSelectedFates([]);
+                }}
+                style={{
+                  background: THEME.neonBlue,
+                  color: '#000',
+                  border: 'none',
+                  padding: '15px',
+                  fontSize: '1.1rem',
+                  fontFamily: "'Rajdhani', sans-serif",
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                CLOSE
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1892,6 +2252,7 @@ const App = () => {
           devMode={devMode}
           setDevMode={setDevMode}
           mode={mode}
+          isMobile={isMobile}
         />
       </div>
 
