@@ -261,7 +261,7 @@ interface TextureErrorBoundaryState {
   hasError: boolean;
 }
 
-class TextureErrorBoundary extends Component<TextureErrorBoundaryProps, TextureErrorBoundaryState> {
+class TextureErrorBoundary extends React.Component<TextureErrorBoundaryProps, TextureErrorBoundaryState> {
   state: TextureErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(error: any) {
@@ -392,7 +392,7 @@ const GlassGlobe: React.FC<{ config: GameConfig['globe'], debug: boolean }> = ({
   );
 };
 
-const MachineBase = ({ config, debug, gameState }: { config: GameConfig['tray'], debug: boolean, gameState: string }) => {
+const MachineBase: React.FC<{ config: GameConfig['tray'], debug: boolean, gameState: string }> = ({ config, debug, gameState }) => {
   const { barrierZ, barrierWidth, barrierHeight } = config;
 
   // Propeller / Fan Animation Logic
@@ -1569,7 +1569,7 @@ const App = () => {
           pointerEvents: 'auto', 
           display: 'flex', 
           flexDirection: isMobile ? 'column' : 'row-reverse',
-          alignItems: 'center', 
+          alignItems: isMobile ? 'flex-end' : 'center', 
           gap: isMobile ? '15px' : '20px',
           transition: 'all 0.3s ease'
         }}>
