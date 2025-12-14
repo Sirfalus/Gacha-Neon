@@ -16,7 +16,7 @@ import {
   Sparkles,
   Grid
 } from '@react-three/drei';
-import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -93,10 +93,10 @@ const INITIAL_CONFIG: GameConfig = {
   mascot: { x: -1.8, y: 2, z: 3.5 },
   tray: { barrierZ: 5, barrierWidth: 6, barrierHeight: 3 },
   graphics: {
-    bloomEnabled: true,
+    bloomEnabled: false,
     bloomThreshold: 0.9,
     bloomIntensity: 0.8,
-    neonIntensity: 1.5,
+    neonIntensity: 2.0,
     gridHeight: 0.1
   }
 };
@@ -379,12 +379,14 @@ const GlassGlobe: React.FC<{ config: GameConfig['globe'], debug: boolean }> = ({
         <sphereGeometry args={[radius + 0.1, 32, 32]} />
         <meshPhysicalMaterial
           color={THEME.glass}
-          transmission={0.9}
+          transmission={0.95}
           opacity={0.3}
           transparent
-          roughness={0.1}
+          roughness={0}
           metalness={0.1}
-          thickness={1}
+          clearcoat={1.0}
+          clearcoatRoughness={0.1}
+          thickness={3}
           ior={1.5}
           side={THREE.DoubleSide}
         />
@@ -747,9 +749,9 @@ const Mascot = ({ url, gameState, pos }: { url: string, gameState: string, pos: 
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
           map={texture}
-          transparent
+          transparent={false}
           alphaTest={0.5}
-          depthWrite={false}
+          depthWrite={true}
           side={THREE.DoubleSide}
           toneMapped={false}
           color="#fff" // Ensure full brightness
@@ -1361,9 +1363,29 @@ const App = () => {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   // Data Lists
-  const [fates, setFates] = useState<string[]>(DEFAULT_FATES);
-  const [squadList, setSquadList] = useState<string[]>(DEFAULT_SQUAD);
-  const [activeSquad, setActiveSquad] = useState<string[]>(DEFAULT_SQUAD);
+  // Data Lists - Persisted
+  const [fates, setFates] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('gacha_fates');
+      return saved ? JSON.parse(saved) : DEFAULT_FATES;
+    } catch (e) { return DEFAULT_FATES; }
+  });
+
+  const [squadList, setSquadList] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('gacha_squad');
+      return saved ? JSON.parse(saved) : DEFAULT_SQUAD;
+    } catch (e) { return DEFAULT_SQUAD; }
+  });
+
+  const [activeSquad, setActiveSquad] = useState<string[]>(() => {
+    // Optional: Persist active squad state? For now, re-init from squadList or default 
+    // to avoid getting stuck in empty state if persistence fails 
+    return DEFAULT_SQUAD;
+  });
+
+  // Reset active squad if squadList changes (and not in middle of game?) 
+  // Actually, let's keep the existing useEffect for that.
 
   // Gift Mode State
   const [exchangeOrder, setExchangeOrder] = useState<string[]>([]);
@@ -1371,7 +1393,19 @@ const App = () => {
 
   const [prizeColor, setPrizeColor] = useState(THEME.neonGold);
   // Default mascot uses the shared asset served by bbits-web public folder
-  const [mascotUrl, setMascotUrl] = useState('/vivi_heart.png');
+  const [mascotUrl, setMascotUrl] = useState(() => {
+    // Migrate users who previously had the unintended default of /logo_circle.png
+    try {
+      const saved = localStorage.getItem('gacha_mascot');
+      if (saved === '/logo_circle.png') {
+        localStorage.setItem('gacha_mascot', '/vivi_heart.png');
+        return '/vivi_heart.png';
+      }
+      return saved || '/vivi_heart.png';
+    } catch (e) {
+      return '/vivi_heart.png';
+    }
+  });
 
   // Dev & Config State
   const [devMode, setDevMode] = useState(false);
@@ -1395,6 +1429,19 @@ const App = () => {
     (window as any).addEventListener('resize', checkMobile);
     return () => (window as any).removeEventListener('resize', checkMobile);
   }, []);
+
+  // --- Persistence Effects ---
+  useEffect(() => {
+    localStorage.setItem('gacha_fates', JSON.stringify(fates));
+  }, [fates]);
+
+  useEffect(() => {
+    localStorage.setItem('gacha_squad', JSON.stringify(squadList));
+  }, [squadList]);
+
+  useEffect(() => {
+    localStorage.setItem('gacha_mascot', mascotUrl);
+  }, [mascotUrl]);
 
   // Sync active squad with master list if not playing
   useEffect(() => {
@@ -1841,7 +1888,7 @@ const App = () => {
         />
       </div>
 
-      <Canvas camera={{ position: [0, 6, 14], fov: 45 }} dpr={1}>
+      <Canvas camera={{ position: [0, 6, 14], fov: 45 }} dpr={1} gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}>
         <color attach="background" args={['#050505']} />
         <fog attach="fog" args={['#050505', 10, 50]} />
 
@@ -1867,6 +1914,7 @@ const App = () => {
           {gameConfig.graphics.bloomEnabled && (
             <Bloom luminanceThreshold={gameConfig.graphics.bloomThreshold} intensity={gameConfig.graphics.bloomIntensity} levels={9} mipmapBlur />
           )}
+          <ChromaticAberration offset={[0.002, 0.002]} />
           <Vignette eskil={false} offset={0.1} darkness={1.1} />
         </EffectComposer>
 
@@ -1878,7 +1926,19 @@ const App = () => {
           maxDistance={20}
           target={[0, 3, 0]}
         />
-        <Environment preset="city" />
+        <Environment preset="city" background={false} blur={0.8} />
+
+        {/* Cinematic Lighting Setup */}
+        <ambientLight intensity={0.5} />
+        <spotLight
+          position={[10, 10, 10]}
+          angle={0.15}
+          penumbra={1}
+          intensity={5}
+          castShadow={false}
+          color={THEME.neonBlue}
+        />
+        <pointLight position={[-10, -10, -10]} intensity={2} color={THEME.neonPink} />
         {/* ContactShadows removed for mobile stability */}
       </Canvas>
     </>
