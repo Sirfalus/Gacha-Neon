@@ -1,35 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BBits Fate Gacha</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Zen+Tokyo+Zoo&display=swap" rel="stylesheet">
-    <style>
-      body, html {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        background-color: #050505;
-        color: white;
-        font-family: 'Rajdhani', sans-serif;
-        overflow: hidden;
-      }
-      #root {
-        width: 100%;
-        height: 100%;
-      }
-      * {
-        box-sizing: border-box;
-        user-select: none;
-      }
-    </style>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BBits Fate Gacha</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Zen+Tokyo+Zoo&display=swap"
+    rel="stylesheet">
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #050505;
+      color: white;
+      font-family: 'Rajdhani', sans-serif;
+      overflow: hidden;
+    }
+
+    #root {
+      width: 100%;
+      height: 100%;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <!-- Shared BBits header: renders a top-left circular logo link -->
+  <script src="/nav-bar.js"></script>
+  <script type="module" src="/index.tsx"></script>
   </head>
+
   <body>
+    <bbits-nav href="/" title="BBits" logo="/logo_circle.png" size="44" bg="#ffffff22"></bbits-nav>
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
   </body>
+
 </html>

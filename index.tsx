@@ -763,32 +763,29 @@ const Mascot = ({ url, gameState, pos }: { url: string, gameState: string, pos: 
 
 // --- Main Game Scene ---
 
+
 const GameScene = ({
   spinSignal,
   gameState,
   onPrizeClaim,
   prizeColor,
-  fateList,
   mascotUrl,
   config,
   resetTrigger,
   debug,
   ballCount,
-  onPieceSelected,
-  fixedResult
+  onPieceSelected
 }: {
   spinSignal: number,
   gameState: string,
-  onPrizeClaim: (f: string) => void,
+  onPrizeClaim: () => void,
   prizeColor: string,
-  fateList: string[],
   mascotUrl: string,
   config: GameConfig,
   resetTrigger: number,
   debug: boolean,
   ballCount: number,
-  onPieceSelected?: (color: string) => void,
-  fixedResult?: string | null
+  onPieceSelected?: (color: string) => void
 }) => {
   const [balls, setBalls] = useState<{ id: string, pos: [number, number, number], color: string }[]>([]);
   const [prizeVisible, setPrizeVisible] = useState(false);
@@ -904,10 +901,7 @@ const GameScene = ({
           color={prizeColor} // Uses color synced with removed ball
           isPrize={true}
           onClick={() => {
-            soundManager.playFanfare();
-            // Pick result: If fixedResult provided (GIFT mode), use it. Else random from list.
-            const f = fixedResult || (fateList.length > 0 ? fateList[Math.floor(Math.random() * fateList.length)] : "NO TARGETS");
-            onPrizeClaim(f);
+            onPrizeClaim();
             setPrizeVisible(false);
           }}
         />
@@ -1552,6 +1546,14 @@ const App = () => {
     setPrizeColor(color);
   };
 
+  const handlePrizeClaim = () => {
+    soundManager.playFanfare();
+    // Pick result: If fixedResult provided (GIFT mode), use it. Else random from list.
+    const currentFateList = mode === 'FATE' ? fates : activeSquad;
+    const result = fixedResult || (currentFateList.length > 0 ? currentFateList[Math.floor(Math.random() * currentFateList.length)] : "NO TARGETS");
+    handleResult(result);
+  };
+
   const handleResult = (text: string) => {
     setFate(text);
     setGameState('IDLE');
@@ -1620,14 +1622,16 @@ const App = () => {
       <div style={{ position: 'absolute', zIndex: 1, width: '100%', height: '100%', pointerEvents: 'none' }}>
 
         {/* Header */}
-        <div style={{ position: 'absolute', top: 30, left: 30 }}>
+        {/* Header - Logo is handled externally via index.html <bbits-nav> */}
+        <div style={{ position: 'absolute', top: 30, left: 90 }}>
           <h1 style={{
             margin: 0,
             fontSize: '4rem',
             fontFamily: "'Zen Tokyo Zoo', cursive",
             color: modeColor,
             textShadow: `0 0 20px ${modeColor}`,
-            transition: 'color 0.5s ease, text-shadow 0.5s ease'
+            transition: 'color 0.5s ease, text-shadow 0.5s ease',
+            lineHeight: 1
           }}>
             BBITS GACHA
           </h1>
@@ -1804,20 +1808,23 @@ const App = () => {
 
             return (
               <button
-                onClick={handleSpin}
-                disabled={gameState !== 'IDLE'}
+                onClick={() => {
+                  if (gameState === 'IDLE') handleSpin();
+                  else if (gameState === 'RESULT') handlePrizeClaim();
+                }}
+                disabled={gameState === 'SPINNING'}
                 onMouseEnter={() => soundManager.init()}
                 style={{
-                  background: gameState === 'IDLE' ? 'transparent' : '#333',
-                  border: `2px solid ${gameState === 'IDLE' ? modeColor : '#555'}`,
-                  color: gameState === 'IDLE' ? modeColor : '#555',
+                  background: gameState !== 'SPINNING' ? 'transparent' : '#333',
+                  border: `2px solid ${gameState !== 'SPINNING' ? modeColor : '#555'}`,
+                  color: gameState !== 'SPINNING' ? modeColor : '#555',
                   padding: isMobile ? '10px 30px' : '20px 60px',
                   fontSize: isMobile ? '1.2rem' : '2rem',
                   fontFamily: "'Rajdhani', sans-serif",
                   fontWeight: 'bold',
-                  cursor: gameState === 'IDLE' ? 'pointer' : 'default',
+                  cursor: gameState !== 'SPINNING' ? 'pointer' : 'default',
                   borderRadius: '4px',
-                  boxShadow: gameState === 'IDLE' ? `0 0 30px ${modeColor}, inset 0 0 10px ${modeColor}` : 'none',
+                  boxShadow: gameState !== 'SPINNING' ? `0 0 30px ${modeColor}, inset 0 0 10px ${modeColor}` : 'none',
                   transition: 'all 0.3s ease',
                   textTransform: 'uppercase',
                   letterSpacing: '2px'
@@ -1897,16 +1904,14 @@ const App = () => {
           <GameScene
             spinSignal={spinCount}
             gameState={gameState}
-            onPrizeClaim={handleResult}
+            onPrizeClaim={handlePrizeClaim}
             prizeColor={prizeColor}
-            fateList={mode === 'FATE' ? fates : activeSquad}
             mascotUrl={mascotUrl}
             config={gameConfig}
             resetTrigger={resetTrigger}
             debug={devMode}
             ballCount={currentBallCount}
             onPieceSelected={handlePieceSelected}
-            fixedResult={fixedResult}
           />
         </Physics>
 
