@@ -1269,7 +1269,7 @@ const FateEditor = ({
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLocalMascotUrl((e.target as any).value)}
                     onBlur={applyMascot} // Auto apply on blur
                     onKeyDown={(e) => e.key === 'Enter' && applyMascot()}
-                    placeholder="Paste Google Drive Link..."
+                    placeholder="Paste Image URL (ex. https://xxx.jpg )..."
                     style={{
                     flex: 1,
                     background: '#222',
@@ -1330,7 +1330,8 @@ const App = () => {
   const [exchangeIndex, setExchangeIndex] = useState(0);
 
   const [prizeColor, setPrizeColor] = useState(THEME.neonGold);
-  const [mascotUrl, setMascotUrl] = useState('https://iili.io/fYojht2.md.png');
+  // Default mascot uses the shared asset served by bbits-web public folder
+  const [mascotUrl, setMascotUrl] = useState('/vivi_heart.png');
   
   // Dev & Config State
   const [devMode, setDevMode] = useState(false);
@@ -1541,7 +1542,7 @@ const App = () => {
             textShadow: `0 0 20px ${modeColor}`,
             transition: 'color 0.5s ease, text-shadow 0.5s ease'
           }}>
-            NEON GACHA
+            BBITS GACHA
           </h1>
           <p style={{ margin: 0, fontSize: '1.2rem', letterSpacing: '4px', opacity: 0.8 }}>
               {mode === 'FATE' ? 'CYBER FATE SYSTEM' : (mode === 'SQUAD' ? 'TARGET SELECTOR' : 'GIFT EXCHANGE PROTOCOL')}
