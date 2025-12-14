@@ -48,6 +48,14 @@ const DEFAULT_FATES = [
   "Clean Code Karma"
 ];
 
+const DEFAULT_SQUAD = [
+  "Player One",
+  "Player Two",
+  "Player Three",
+  "Player Four",
+  "Player Five"
+];
+
 // --- Types ---
 interface GameConfig {
   globe: {
@@ -74,7 +82,7 @@ interface GameConfig {
 const INITIAL_CONFIG: GameConfig = {
   globe: { centerY: 5.8, radius: 3 },
   spawn: { yMin: 4.5, yMax: 7.0, spawnRadius: 2.5 },
-  mascot: { x: -1.8, y: 2, z: 3.5 }, // Updated position to sit to the right of the machine
+  mascot: { x: -1.8, y: 2, z: 3.5 },
   tray: { barrierZ: 5, barrierWidth: 6, barrierHeight: 3 }
 };
 
@@ -735,7 +743,9 @@ const GameScene = ({
   mascotUrl,
   config,
   resetTrigger,
-  debug
+  debug,
+  ballCount,
+  onPieceSelected
 }: { 
   spinSignal: number, 
   gameState: string, 
@@ -745,19 +755,21 @@ const GameScene = ({
   mascotUrl: string,
   config: GameConfig,
   resetTrigger: number,
-  debug: boolean
+  debug: boolean,
+  ballCount: number,
+  onPieceSelected?: (color: string) => void
 }) => {
   const [balls, setBalls] = useState<{id: string, pos: [number, number, number], color: string}[]>([]);
   const [prizeVisible, setPrizeVisible] = useState(false);
   
-  // Initialize standard balls
+  // Initialize balls on Reset/Load
   useEffect(() => {
     const arr = [];
     const colors = [THEME.neonBlue, THEME.neonPink, THEME.neonGold, THEME.neonGreen, THEME.neonPurple];
     const { yMin, yMax, spawnRadius } = config.spawn;
     const radius = spawnRadius || config.globe.radius * 0.8; 
 
-    for(let i=0; i<35; i++) {
+    for(let i=0; i<ballCount; i++) {
       arr.push({
         id: uuidv4(),
         pos: [
@@ -769,7 +781,51 @@ const GameScene = ({
       });
     }
     setBalls(arr);
-  }, [resetTrigger]); // Re-run when resetTrigger changes
+  }, [resetTrigger]); // Only re-run when explicit reset or load is triggered
+
+  // Sync Balls dynamically without regenerating everything (prevents flicker)
+  useEffect(() => {
+    setBalls(prev => {
+        const currentLen = prev.length;
+        if (currentLen === ballCount) return prev;
+
+        if (ballCount < currentLen) {
+            // Remove the difference from end to keep others stable
+            return prev.slice(0, ballCount);
+        } else {
+            // Add new balls
+            const countToAdd = ballCount - currentLen;
+            const newBalls = [];
+            const colors = [THEME.neonBlue, THEME.neonPink, THEME.neonGold, THEME.neonGreen, THEME.neonPurple];
+            const { yMin, yMax, spawnRadius } = config.spawn;
+            const radius = spawnRadius || config.globe.radius * 0.8; 
+
+            for(let i=0; i<countToAdd; i++) {
+                newBalls.push({
+                    id: uuidv4(),
+                    pos: [
+                    (Math.random()-0.5) * radius, 
+                    yMin + Math.random() * (yMax - yMin), 
+                    (Math.random()-0.5) * radius
+                    ] as [number,number,number],
+                    color: colors[Math.floor(Math.random()*colors.length)]
+                });
+            }
+            return [...prev, ...newBalls];
+        }
+    });
+  }, [ballCount, config.spawn, config.globe.radius]);
+
+  // Notify parent of the next ball color when spinning starts
+  useEffect(() => {
+    if (gameState === 'SPINNING' && balls.length > 0) {
+      // The ball that will be removed is the last one in the array (due to slice(0, ballCount))
+      const nextBall = balls[balls.length - 1];
+      if (onPieceSelected) {
+        onPieceSelected(nextBall.color);
+      }
+    }
+  }, [gameState]); // balls is in closure but triggered on gameState change
 
   // Handle Spin Signal
   useEffect(() => {
@@ -814,11 +870,12 @@ const GameScene = ({
       {prizeVisible && gameState === 'RESULT' && (
         <Ball 
           position={[0, 1.5, 2.6]} 
-          color={prizeColor} // Uses random color passed from parent
+          color={prizeColor} // Uses color synced with removed ball
           isPrize={true}
           onClick={() => {
             soundManager.playFanfare();
-            const f = fateList[Math.floor(Math.random()*fateList.length)];
+            // Pick a random fate from the list provided
+            const f = fateList.length > 0 ? fateList[Math.floor(Math.random()*fateList.length)] : "NO TARGETS";
             onPrizeClaim(f);
             setPrizeVisible(false);
           }}
@@ -971,31 +1028,54 @@ const FateEditor = ({
   onClose, 
   fates, 
   setFates,
+  squadList,
+  setSquadList,
   mascotUrl,
   setMascotUrl,
   devMode,
-  setDevMode
+  setDevMode,
+  mode
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
   fates: string[], 
   setFates: (f: string[]) => void,
+  squadList: string[],
+  setSquadList: (f: string[]) => void,
   mascotUrl: string,
   setMascotUrl: (url: string) => void,
   devMode: boolean,
-  setDevMode: (b: boolean) => void
+  setDevMode: (b: boolean) => void,
+  mode: 'FATE' | 'SQUAD'
 }) => {
   const [newFate, setNewFate] = useState('');
   const [localMascotUrl, setLocalMascotUrl] = useState(mascotUrl);
+  const [activeTab, setActiveTab] = useState<'FATE' | 'SQUAD'>(mode);
+  const [squadText, setSquadText] = useState(squadList.join('\n'));
 
   // Sync local state if parent state changes (reset)
   useEffect(() => {
     setLocalMascotUrl(mascotUrl);
   }, [mascotUrl]);
 
+  // Keep squad text synced when opening/switching
+  useEffect(() => {
+    if(isOpen) {
+        setSquadText(squadList.join('\n'));
+        setActiveTab(mode);
+    }
+  }, [isOpen, squadList, mode]);
+
+  const handleSquadTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = (e.target as any).value;
+    setSquadText(val);
+    const lines = val.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    setSquadList(lines);
+  };
+
   if (!isOpen) return null;
 
-  const handleAdd = () => {
+  const handleAddFate = () => {
     if (newFate.trim()) {
       setFates([...fates, newFate.trim()]);
       setNewFate('');
@@ -1003,7 +1083,7 @@ const FateEditor = ({
     }
   };
 
-  const handleDelete = (index: number) => {
+  const handleDeleteFate = (index: number) => {
     const next = [...fates];
     next.splice(index, 1);
     setFates(next);
@@ -1026,18 +1106,18 @@ const FateEditor = ({
     }}>
       <div style={{
         background: '#111',
-        border: `2px solid ${THEME.neonBlue}`,
+        border: `2px solid ${activeTab === 'FATE' ? THEME.neonBlue : THEME.neonGreen}`,
         padding: '30px',
         borderRadius: '10px',
-        width: '500px',
+        width: '600px',
         maxWidth: '90%',
         maxHeight: '90%',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: `0 0 40px rgba(0,243,255,0.2)`
+        boxShadow: `0 0 40px ${activeTab === 'FATE' ? 'rgba(0,243,255,0.2)' : 'rgba(0,255,170,0.2)'}`
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ margin: 0, color: THEME.neonBlue, fontFamily: "'Rajdhani', sans-serif" }}>SETTINGS</h2>
+          <h2 style={{ margin: 0, color: '#fff', fontFamily: "'Rajdhani', sans-serif" }}>SYSTEM CONFIG</h2>
           <button 
             onClick={onClose}
             style={{ 
@@ -1046,97 +1126,163 @@ const FateEditor = ({
           >✕</button>
         </div>
 
-        {/* Mascot Config */}
-        <div style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #333' }}>
-           <h3 style={{ color: '#aaa', margin: '0 0 10px 0', fontSize: '1rem' }}>MASCOT IMAGE</h3>
-           <div style={{ display: 'flex', gap: '10px' }}>
-             <input 
-                type="text"
-                value={localMascotUrl}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLocalMascotUrl((e.target as any).value)}
-                onBlur={applyMascot} // Auto apply on blur
-                onKeyDown={(e) => e.key === 'Enter' && applyMascot()}
-                placeholder="Paste Google Drive Link..."
-                style={{
-                  flex: 1,
-                  background: '#222',
-                  border: '1px solid #444',
-                  color: 'white',
-                  padding: '10px',
-                  fontFamily: "'Rajdhani', sans-serif",
-                  fontSize: '14px'
-                }}
-             />
+        {/* Tab Switcher */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #333', marginBottom: '20px' }}>
              <button 
-                onClick={applyMascot}
-                style={{
-                  background: THEME.neonPurple,
-                  color: '#fff',
-                  border: 'none',
-                  padding: '0 15px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
-             >APPLY</button>
-           </div>
-           <div style={{fontSize: '0.8rem', color: '#666', marginTop: '5px'}}>Supports Google Drive shared links</div>
+               onClick={() => setActiveTab('FATE')}
+               style={{
+                 flex: 1,
+                 background: activeTab === 'FATE' ? '#222' : 'transparent',
+                 border: 'none',
+                 borderBottom: activeTab === 'FATE' ? `2px solid ${THEME.neonBlue}` : 'none',
+                 color: activeTab === 'FATE' ? THEME.neonBlue : '#666',
+                 padding: '10px',
+                 cursor: 'pointer',
+                 fontFamily: "'Rajdhani', sans-serif",
+                 fontWeight: 'bold',
+                 fontSize: '1.1rem'
+               }}
+             >
+               FATE LIST
+             </button>
+             <button 
+               onClick={() => setActiveTab('SQUAD')}
+               style={{
+                 flex: 1,
+                 background: activeTab === 'SQUAD' ? '#222' : 'transparent',
+                 border: 'none',
+                 borderBottom: activeTab === 'SQUAD' ? `2px solid ${THEME.neonGreen}` : 'none',
+                 color: activeTab === 'SQUAD' ? THEME.neonGreen : '#666',
+                 padding: '10px',
+                 cursor: 'pointer',
+                 fontFamily: "'Rajdhani', sans-serif",
+                 fontWeight: 'bold',
+                 fontSize: '1.1rem'
+               }}
+             >
+               SQUAD LIST
+             </button>
         </div>
 
-        <h3 style={{ color: '#aaa', margin: '0 0 10px 0', fontSize: '1rem' }}>FATE LIST</h3>
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-          <input 
-            type="text" 
-            value={newFate}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFate((e.target as any).value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            placeholder="Enter new fate..."
-            style={{
-              flex: 1,
-              background: '#222',
-              border: '1px solid #444',
-              color: 'white',
-              padding: '10px',
-              fontFamily: "'Rajdhani', sans-serif",
-              fontSize: '16px'
-            }}
-          />
-          <button 
-            onClick={handleAdd}
-            style={{
-              background: THEME.neonBlue,
-              color: '#000',
-              border: 'none',
-              padding: '10px 20px',
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}
-          >ADD</button>
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            {activeTab === 'FATE' ? (
+                <>
+                    <h3 style={{ color: '#aaa', margin: '0 0 10px 0', fontSize: '1rem' }}>RANDOM FATES</h3>
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                    <input 
+                        type="text" 
+                        value={newFate}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFate((e.target as any).value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddFate()}
+                        placeholder="Enter new fate..."
+                        style={{
+                        flex: 1,
+                        background: '#222',
+                        border: '1px solid #444',
+                        color: 'white',
+                        padding: '10px',
+                        fontFamily: "'Rajdhani', sans-serif",
+                        fontSize: '16px'
+                        }}
+                    />
+                    <button 
+                        onClick={handleAddFate}
+                        style={{
+                        background: THEME.neonBlue,
+                        color: '#000',
+                        border: 'none',
+                        padding: '10px 20px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                        }}
+                    >ADD</button>
+                    </div>
+
+                    <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid #333', marginBottom: '20px' }}>
+                    {fates.map((item, idx) => (
+                        <div key={idx} style={{ 
+                        display: 'flex', justifyContent: 'space-between', padding: '10px', borderBottom: '1px solid #222', alignItems: 'center'
+                        }}>
+                        <span>{item}</span>
+                        <button 
+                            onClick={() => handleDeleteFate(idx)}
+                            style={{
+                            background: 'transparent',
+                            color: THEME.neonPink,
+                            border: `1px solid ${THEME.neonPink}`,
+                            padding: '5px 10px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                            }}
+                        >DELETE</button>
+                        </div>
+                    ))}
+                    </div>
+                </>
+            ) : (
+                <>
+                    <h3 style={{ color: '#aaa', margin: '0 0 10px 0', fontSize: '1rem' }}>BULK ENTRY (ONE NAME PER LINE)</h3>
+                    <textarea 
+                        value={squadText}
+                        onChange={handleSquadTextChange}
+                        placeholder="Paste names here..."
+                        style={{
+                            flex: 1,
+                            background: '#222',
+                            border: `1px solid ${THEME.neonGreen}`,
+                            color: 'white',
+                            padding: '15px',
+                            fontFamily: 'monospace',
+                            fontSize: '14px',
+                            resize: 'none',
+                            minHeight: '200px'
+                        }}
+                    />
+                    <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '10px', fontStyle: 'italic' }}>
+                        * This is the master list. Reload Squad in main screen to reset active players to this list.
+                    </div>
+                </>
+            )}
         </div>
 
-        <div style={{ overflowY: 'auto', flex: 1, borderTop: '1px solid #333', marginBottom: '20px' }}>
-          {fates.map((item, idx) => (
-            <div key={idx} style={{ 
-              display: 'flex', justifyContent: 'space-between', padding: '10px', borderBottom: '1px solid #222', alignItems: 'center'
-            }}>
-              <span>{item}</span>
-              <button 
-                onClick={() => handleDelete(idx)}
-                style={{
-                  background: 'transparent',
-                  color: THEME.neonPink,
-                  border: `1px solid ${THEME.neonPink}`,
-                  padding: '5px 10px',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
-              >DELETE</button>
+        {/* Common Configs */}
+        <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #333' }}>
+             <h3 style={{ color: '#aaa', margin: '0 0 10px 0', fontSize: '1rem' }}>MASCOT IMAGE</h3>
+            <div style={{ display: 'flex', gap: '10px' }}>
+                <input 
+                    type="text"
+                    value={localMascotUrl}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLocalMascotUrl((e.target as any).value)}
+                    onBlur={applyMascot} // Auto apply on blur
+                    onKeyDown={(e) => e.key === 'Enter' && applyMascot()}
+                    placeholder="Paste Google Drive Link..."
+                    style={{
+                    flex: 1,
+                    background: '#222',
+                    border: '1px solid #444',
+                    color: 'white',
+                    padding: '10px',
+                    fontFamily: "'Rajdhani', sans-serif",
+                    fontSize: '14px'
+                    }}
+                />
+                <button 
+                    onClick={applyMascot}
+                    style={{
+                    background: THEME.neonPurple,
+                    color: '#fff',
+                    border: 'none',
+                    padding: '0 15px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                    }}
+                >APPLY</button>
             </div>
-          ))}
         </div>
 
         {/* Dev Mode Toggle */}
-        <div style={{ borderTop: '1px solid #333', paddingTop: '15px', display: 'flex', alignItems: 'center' }}>
+        <div style={{ borderTop: '1px solid #333', marginTop: '15px', paddingTop: '15px', display: 'flex', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', color: devMode ? THEME.neonGold : '#666' }}>
             <input 
               type="checkbox" 
@@ -1154,10 +1300,17 @@ const FateEditor = ({
 
 const App = () => {
   const [gameState, setGameState] = useState<'IDLE' | 'SPINNING' | 'RESULT'>('IDLE');
+  const [mode, setMode] = useState<'FATE' | 'SQUAD'>('FATE');
+  
   const [fate, setFate] = useState<string | null>(null);
   const [spinCount, setSpinCount] = useState(0);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  
+  // Data Lists
   const [fates, setFates] = useState<string[]>(DEFAULT_FATES);
+  const [squadList, setSquadList] = useState<string[]>(DEFAULT_SQUAD);
+  const [activeSquad, setActiveSquad] = useState<string[]>(DEFAULT_SQUAD);
+
   const [prizeColor, setPrizeColor] = useState(THEME.neonGold);
   const [mascotUrl, setMascotUrl] = useState('https://iili.io/fYojht2.md.png');
   
@@ -1183,6 +1336,33 @@ const App = () => {
     (window as any).addEventListener('resize', checkMobile);
     return () => (window as any).removeEventListener('resize', checkMobile);
   }, []);
+
+  // Sync active squad with master list if not playing
+  useEffect(() => {
+     if (gameState === 'IDLE') {
+        // Only if starting fresh or reset, but we want to persist active state during game.
+        // We only reset active squad manually or on mode switch.
+     }
+  }, [squadList]);
+
+  // Handle Mode Switch
+  const toggleMode = () => {
+      const newMode = mode === 'FATE' ? 'SQUAD' : 'FATE';
+      setMode(newMode);
+      if (newMode === 'SQUAD') {
+          // Reset squad on entry? Let's just ensure it's valid.
+          if (activeSquad.length === 0) {
+              setActiveSquad([...squadList]);
+          }
+      }
+      soundManager.playClick();
+  };
+
+  const handleReloadSquad = () => {
+      setActiveSquad([...squadList]);
+      soundManager.playClick();
+      setResetTrigger(prev => prev + 1); // Respawn balls
+  };
 
   // Update volume expanded state based on mobile
   useEffect(() => {
@@ -1223,9 +1403,8 @@ const App = () => {
     soundManager.init();
     soundManager.playSpin();
     
-    // Pick random prize color
-    const colors = [THEME.neonBlue, THEME.neonPink, THEME.neonGold, THEME.neonGreen, THEME.neonPurple];
-    setPrizeColor(colors[Math.floor(Math.random() * colors.length)]);
+    // We do NOT set random prize color here anymore. 
+    // It is set via callback from GameScene to sync with removed ball.
 
     setGameState('SPINNING');
     setFate(null);
@@ -1236,9 +1415,18 @@ const App = () => {
     }, 2000);
   };
 
+  // Callback from GameScene when spinning starts to report which ball (color) is being selected
+  const handlePieceSelected = (color: string) => {
+    setPrizeColor(color);
+  };
+
   const handleResult = (text: string) => {
     setFate(text);
     setGameState('IDLE');
+    if (mode === 'SQUAD') {
+        // Remove the picked person from the active squad
+        setActiveSquad(prev => prev.filter(p => p !== text));
+    }
   };
 
   const toggleMute = () => {
@@ -1253,6 +1441,17 @@ const App = () => {
     soundManager.setVolume(v);
   };
 
+  // Determine current ball count for GameScene
+  const currentBallCount = useMemo(() => {
+    const base = mode === 'FATE' ? 35 : activeSquad.length;
+    // Visually decrease count when prize appears in tray (RESULT state) for BOTH modes
+    // This makes the ball disappear from inside the glass
+    if (gameState === 'RESULT' && base > 0) {
+        return base - 1;
+    }
+    return base;
+  }, [mode, activeSquad.length, gameState]);
+
   return (
     <>
       <div style={{ position: 'absolute', zIndex: 1, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -1263,15 +1462,18 @@ const App = () => {
             margin: 0, 
             fontSize: '4rem', 
             fontFamily: "'Zen Tokyo Zoo', cursive", 
-            color: THEME.neonPink,
-            textShadow: `0 0 20px ${THEME.neonPink}`
+            color: mode === 'FATE' ? THEME.neonPink : THEME.neonGreen,
+            textShadow: `0 0 20px ${mode === 'FATE' ? THEME.neonPink : THEME.neonGreen}`,
+            transition: 'color 0.5s ease, text-shadow 0.5s ease'
           }}>
             NEON GACHA
           </h1>
-          <p style={{ margin: 0, fontSize: '1.2rem', letterSpacing: '4px', opacity: 0.8 }}>CYBER FATE SYSTEM</p>
+          <p style={{ margin: 0, fontSize: '1.2rem', letterSpacing: '4px', opacity: 0.8 }}>
+              {mode === 'FATE' ? 'CYBER FATE SYSTEM' : 'TARGET SELECTOR'}
+          </p>
         </div>
 
-        {/* Controls: Audio & Settings */}
+        {/* Controls: Mode, Audio & Settings */}
         <div style={{ 
           position: 'absolute', 
           top: 30, 
@@ -1284,6 +1486,26 @@ const App = () => {
           transition: 'all 0.3s ease'
         }}>
           
+          {/* Mode Switcher */}
+          <button 
+             onClick={toggleMode}
+             style={{
+                 background: 'rgba(0,0,0,0.5)',
+                 border: `1px solid ${mode === 'FATE' ? THEME.neonBlue : THEME.neonGreen}`,
+                 color: mode === 'FATE' ? THEME.neonBlue : THEME.neonGreen,
+                 padding: '10px 15px',
+                 fontSize: '1rem',
+                 fontFamily: "'Rajdhani', sans-serif",
+                 fontWeight: 'bold',
+                 cursor: 'pointer',
+                 borderRadius: '4px',
+                 display: 'flex', alignItems: 'center', gap: '8px'
+             }}
+          >
+             <span style={{ fontSize: '1.2rem' }}>{mode === 'FATE' ? '🔮' : '👥'}</span>
+             <span>{mode === 'FATE' ? 'FATE MODE' : 'SQUAD MODE'}</span>
+          </button>
+
           <button
             onClick={() => { setIsEditorOpen(true); soundManager.playClick(); }}
             style={{
@@ -1358,28 +1580,52 @@ const App = () => {
 
         {/* Action Button */}
         <div style={{ position: 'absolute', bottom: isMobile ? 30 : 50, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'auto' }}>
-          <button
-            onClick={handleSpin}
-            disabled={gameState !== 'IDLE'}
-            onMouseEnter={() => soundManager.init()} // Hint to browser
-            style={{
-              background: gameState === 'IDLE' ? 'transparent' : '#333',
-              border: `2px solid ${gameState === 'IDLE' ? THEME.neonBlue : '#555'}`,
-              color: gameState === 'IDLE' ? THEME.neonBlue : '#555',
-              padding: isMobile ? '10px 30px' : '20px 60px',
-              fontSize: isMobile ? '1.2rem' : '2rem',
-              fontFamily: "'Rajdhani', sans-serif",
-              fontWeight: 'bold',
-              cursor: gameState === 'IDLE' ? 'pointer' : 'default',
-              borderRadius: '4px',
-              boxShadow: gameState === 'IDLE' ? `0 0 30px ${THEME.neonBlue}, inset 0 0 10px ${THEME.neonBlue}` : 'none',
-              transition: 'all 0.3s ease',
-              textTransform: 'uppercase',
-              letterSpacing: '2px'
-            }}
-          >
-            {gameState === 'SPINNING' ? 'PROCESSING...' : gameState === 'RESULT' ? 'CLAIM PRIZE' : 'INITIATE'}
-          </button>
+          {mode === 'SQUAD' && activeSquad.length === 0 ? (
+             <button
+                onClick={handleReloadSquad}
+                onMouseEnter={() => soundManager.init()}
+                style={{
+                  background: '#333',
+                  border: `2px solid ${THEME.neonGreen}`,
+                  color: THEME.neonGreen,
+                  padding: isMobile ? '10px 30px' : '20px 60px',
+                  fontSize: isMobile ? '1.2rem' : '2rem',
+                  fontFamily: "'Rajdhani', sans-serif",
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  borderRadius: '4px',
+                  boxShadow: `0 0 30px ${THEME.neonGreen}`,
+                  transition: 'all 0.3s ease',
+                  textTransform: 'uppercase',
+                  letterSpacing: '2px'
+                }}
+             >
+                RELOAD SQUAD
+             </button>
+          ) : (
+             <button
+                onClick={handleSpin}
+                disabled={gameState !== 'IDLE'}
+                onMouseEnter={() => soundManager.init()} // Hint to browser
+                style={{
+                  background: gameState === 'IDLE' ? 'transparent' : '#333',
+                  border: `2px solid ${gameState === 'IDLE' ? THEME.neonBlue : '#555'}`,
+                  color: gameState === 'IDLE' ? THEME.neonBlue : '#555',
+                  padding: isMobile ? '10px 30px' : '20px 60px',
+                  fontSize: isMobile ? '1.2rem' : '2rem',
+                  fontFamily: "'Rajdhani', sans-serif",
+                  fontWeight: 'bold',
+                  cursor: gameState === 'IDLE' ? 'pointer' : 'default',
+                  borderRadius: '4px',
+                  boxShadow: gameState === 'IDLE' ? `0 0 30px ${THEME.neonBlue}, inset 0 0 10px ${THEME.neonBlue}` : 'none',
+                  transition: 'all 0.3s ease',
+                  textTransform: 'uppercase',
+                  letterSpacing: '2px'
+                }}
+              >
+                {gameState === 'SPINNING' ? 'PROCESSING...' : gameState === 'RESULT' ? 'CLAIM PRIZE' : 'INITIATE'}
+              </button>
+          )}
         </div>
 
         {/* Modal Overlay for Result */}
@@ -1400,6 +1646,11 @@ const App = () => {
               }}>
                 {fate}
               </h2>
+              {mode === 'SQUAD' && (
+                  <div style={{ color: THEME.neonGreen, fontSize: '1.2rem', marginTop: '10px' }}>
+                      REMOVED FROM ROSTER
+                  </div>
+              )}
               <p style={{ marginTop: '30px', color: '#aaa', cursor: 'pointer' }}>[ CLICK TO DISMISS ]</p>
             </div>
           </div>
@@ -1419,10 +1670,13 @@ const App = () => {
           onClose={() => { setIsEditorOpen(false); soundManager.playClick(); }} 
           fates={fates} 
           setFates={setFates}
+          squadList={squadList}
+          setSquadList={setSquadList}
           mascotUrl={mascotUrl}
           setMascotUrl={setMascotUrl}
           devMode={devMode}
           setDevMode={setDevMode}
+          mode={mode}
         />
       </div>
 
@@ -1437,11 +1691,13 @@ const App = () => {
               gameState={gameState} 
               onPrizeClaim={handleResult} 
               prizeColor={prizeColor}
-              fateList={fates}
+              fateList={mode === 'FATE' ? fates : activeSquad}
               mascotUrl={mascotUrl}
               config={gameConfig}
               resetTrigger={resetTrigger}
               debug={devMode}
+              ballCount={currentBallCount}
+              onPieceSelected={handlePieceSelected}
            />
         </Physics>
 
