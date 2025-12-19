@@ -408,7 +408,7 @@ const GlassGlobe: React.FC<{ config: GameConfig['globe'], debug: boolean }> = ({
   );
 };
 
-const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['graphics'], debug: boolean, gameState: string }> = ({ config, graphics, debug, gameState }) => {
+const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['graphics'], debug: boolean, gameState: string, modeColor: string }> = ({ config, graphics, debug, gameState, modeColor }) => {
   const { barrierZ, barrierWidth, barrierHeight } = config;
 
   // Propeller / Fan Animation Logic
@@ -469,8 +469,12 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
   // Futuristic Materials
   const cyberMetal = <meshStandardMaterial color="#1a1a2e" metalness={0.8} roughness={0.2} />;
   const cyberDark = <meshStandardMaterial color="#050510" metalness={0.5} roughness={0.5} />;
+  // Dynamic Neon Material based on Mode
+  const neonBaseMat = <meshStandardMaterial color={modeColor} emissive={modeColor} emissiveIntensity={graphics.neonIntensity} toneMapped={false} />;
+
+  // Secondary color (complementary or static)
   const neonBlueMat = <meshStandardMaterial color={THEME.neonBlue} emissive={THEME.neonBlue} emissiveIntensity={graphics.neonIntensity} toneMapped={false} />;
-  const neonPinkMat = <meshStandardMaterial color={THEME.neonPink} emissive={THEME.neonPink} emissiveIntensity={graphics.neonIntensity} toneMapped={false} />;
+
   const debugMat = <meshBasicMaterial color="red" wireframe transparent opacity={0.5} />;
 
   return (
@@ -485,7 +489,7 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
         {/* Neon Ground Ring */}
         <mesh position={[0, -0.2, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[3.3, 0.05, 16, 100]} />
-          {neonBlueMat}
+          {neonBaseMat}
         </mesh>
       </group>
 
@@ -497,8 +501,8 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
           {cyberMetal}
         </mesh>
 
-        {/* Vertical Neon Accents */}
-        {[0, 90, 180, 270].map((deg, i) => (
+        {/* Vertical Neon Accents - Skip the front one (270 deg) to avoid obstruction */}
+        {[0, 90, 180].map((deg, i) => (
           <group key={i} rotation={[0, deg * Math.PI / 180, 0]}>
             <mesh position={[2.35, 0, 0]}>
               <boxGeometry args={[0.2, 2.4, 0.1]} />
@@ -506,7 +510,7 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
             </mesh>
             <mesh position={[2.38, 0, 0]}>
               <boxGeometry args={[0.05, 2.2, 0.05]} />
-              {neonBlueMat}
+              {neonBaseMat}
             </mesh>
           </group>
         ))}
@@ -520,7 +524,7 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
         </mesh>
         <mesh position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[2.65, 0.05, 16, 100]} />
-          {neonPinkMat}
+          {neonBaseMat}
         </mesh>
       </group>
 
@@ -537,7 +541,7 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
         <group position={[0, -0.2, 0.06]}>
           <mesh position={[0, 0, 0]}>
             <boxGeometry args={[0.9, 0.8, 0.05]} />
-            {neonBlueMat}
+            {neonBaseMat}
           </mesh>
           <mesh position={[0, 0, 0.01]}>
             <boxGeometry args={[0.8, 0.7, 0.05]} />
@@ -552,10 +556,10 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
             <cylinderGeometry args={[0.2, 0.2, 0.3, 16]} />
             {cyberMetal}
           </mesh>
-          {/* Handle (Single Bar) - NOW NEON BLUE */}
+          {/* Handle (Single Bar) - NOW MODE COLORED */}
           <mesh position={[0, 0, 0.15]}>
             <RoundedBox args={[1.5, 0.3, 0.1]} radius={0.05} smoothness={4}>
-              {neonBlueMat}
+              {neonBaseMat}
             </RoundedBox>
           </mesh>
           {/* Center Cap */}
@@ -574,7 +578,7 @@ const MachineBase: React.FC<{ config: GameConfig['tray'], graphics: GameConfig['
           {/* Glowing Edge on Tray */}
           <mesh position={[0, 0.08, 0.25]}>
             <boxGeometry args={[1.6, 0.02, 0.02]} />
-            {neonBlueMat}
+            {neonBaseMat}
           </mesh>
         </group>
       </group>
@@ -774,7 +778,8 @@ const GameScene = ({
   resetTrigger,
   debug,
   ballCount,
-  onPieceSelected
+  onPieceSelected,
+  modeColor
 }: {
   spinSignal: number,
   gameState: string,
@@ -785,7 +790,8 @@ const GameScene = ({
   resetTrigger: number,
   debug: boolean,
   ballCount: number,
-  onPieceSelected?: (color: string) => void
+  onPieceSelected?: (color: string) => void,
+  modeColor: string
 }) => {
   const [balls, setBalls] = useState<{ id: string, pos: [number, number, number], color: string }[]>([]);
   const [prizeVisible, setPrizeVisible] = useState(false);
@@ -869,7 +875,7 @@ const GameScene = ({
   return (
     <>
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-      <Sparkles color={THEME.neonBlue} count={50} scale={10} size={4} speed={0.4} opacity={0.5} />
+      <Sparkles color={modeColor} count={50} scale={10} size={4} speed={0.4} opacity={0.5} />
 
       {/* 
          Key GlassGlobe with JSON.stringify(config.globe) so it remounts when physics geometry changes.
@@ -882,7 +888,7 @@ const GameScene = ({
         ensuring physics bodies update.
         Passed gameState to animate the propeller.
       */}
-      <MachineBase key={JSON.stringify(config.tray)} config={config.tray} graphics={config.graphics} debug={debug} gameState={gameState} />
+      <MachineBase key={JSON.stringify(config.tray)} config={config.tray} graphics={config.graphics} debug={debug} gameState={gameState} modeColor={modeColor} />
       <Floor gridHeight={config.graphics.gridHeight} />
 
       {balls.map(b => (
@@ -1983,10 +1989,16 @@ const App = () => {
 
         {/* Header */}
         {/* Header - Logo is handled externally via index.html <bbits-nav> */}
-        <div style={{ position: 'absolute', top: 30, left: 90 }}>
+        <div style={{
+          position: 'absolute', top: 30, left: isMobile ? 0 : 90, zIndex: 0,
+          width: isMobile ? '100%' : 'auto',
+          textAlign: isMobile ? 'center' : 'left',
+          cursor: 'pointer',
+          pointerEvents: 'auto'
+        }} onClick={toggleMode}>
           <h1 style={{
             margin: 0,
-            fontSize: '4rem',
+            fontSize: isMobile ? '3rem' : '4rem',
             fontFamily: "'Zen Tokyo Zoo', cursive",
             color: modeColor,
             textShadow: `0 0 20px ${modeColor}`,
@@ -1995,8 +2007,11 @@ const App = () => {
           }}>
             BBITS GACHA
           </h1>
-          <p style={{ margin: 0, fontSize: '1.2rem', letterSpacing: '4px', opacity: 0.8 }}>
+          <p style={{ margin: 0, fontSize: isMobile ? '0.8rem' : '1.2rem', letterSpacing: '4px', opacity: 0.8 }}>
             {mode === 'FATE' ? 'CYBER FATE SYSTEM' : (mode === 'SQUAD' ? 'TARGET SELECTOR' : 'GIFT EXCHANGE PROTOCOL')}
+          </p>
+          <p style={{ margin: '5px 0 0', fontSize: '0.9rem', color: modeColor, opacity: 0.7, fontStyle: 'italic' }}>
+            (Tap to Switch Mode)
           </p>
         </div>
 
@@ -2033,23 +2048,28 @@ const App = () => {
               background: 'rgba(0,0,0,0.5)',
               border: `1px solid ${modeColor}`,
               color: modeColor,
-              padding: '10px 15px',
+              padding: isMobile ? '8px' : '10px 15px',
               fontSize: '1rem',
               fontFamily: "'Rajdhani', sans-serif",
               fontWeight: 'bold',
               cursor: 'pointer',
-              borderRadius: '4px',
+              borderRadius: isMobile ? '50%' : '4px',
               display: 'flex', alignItems: 'center', gap: '8px',
-              minWidth: '160px',
+              minWidth: isMobile ? '40px' : '160px',
+              width: isMobile ? '40px' : 'auto',
+              height: isMobile ? '40px' : 'auto',
               justifyContent: 'center'
             }}
+            title={mode === 'FATE' ? 'FATE MODE' : (mode === 'SQUAD' ? 'SQUAD MODE' : 'GIFT MODE')}
           >
-            <span style={{ fontSize: '1.2rem' }}>
+            <span style={{ fontSize: isMobile ? '1.2rem' : '1.2rem' }}>
               {mode === 'FATE' ? '🔮' : (mode === 'SQUAD' ? '👥' : '🎁')}
             </span>
-            <span>
-              {mode === 'FATE' ? 'FATE MODE' : (mode === 'SQUAD' ? 'SQUAD MODE' : 'GIFT MODE')}
-            </span>
+            {!isMobile && (
+              <span>
+                {mode === 'FATE' ? 'FATE MODE' : (mode === 'SQUAD' ? 'SQUAD MODE' : 'GIFT MODE')}
+              </span>
+            )}
           </button>
 
           <button
@@ -2273,6 +2293,7 @@ const App = () => {
             debug={devMode}
             ballCount={currentBallCount}
             onPieceSelected={handlePieceSelected}
+            modeColor={modeColor}
           />
         </Physics>
 
